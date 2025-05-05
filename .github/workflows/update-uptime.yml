@@ -1,5 +1,4 @@
-name: Update Uptime in README
-
+name: Update Profile Stats in README
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -11,90 +10,108 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-
+          
       - name: Install dependencies
-        run: python -m pip install python-dateutil==2.8.2
-
-      - name: Calculate Uptime and Update README
-        env:
-          START_TIME_SECRET: ${{ secrets.SYSTEM_START_TIME }}
         run: |
-          echo "Starting uptime calculation..."
-
-          UPTIME_STRING=$(python - <<EOF
+          python -m pip install --upgrade pip
+          pip install requests python-dateutil
+          
+      - name: Update Profile Stats
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYSTEM_START_TIME: ${{ secrets.SYSTEM_START_TIME }}
+          GITHUB_USERNAME: ${{ github.repository_owner }}
+        run: |
+          python - <<EOF
           import os
           import sys
+          import re
           from datetime import date
           from dateutil.relativedelta import relativedelta
-
-          start_time_str = os.environ.get('START_TIME_SECRET')
-
+          import requests
+          
+          github_token = os.environ.get('GITHUB_TOKEN')
+          start_time_str = os.environ.get('SYSTEM_START_TIME')
+          username = os.environ.get('GITHUB_USERNAME')
+          headers = {'Authorization': f'token {github_token}'} if github_token else {}
+          
           if not start_time_str:
               print("ERROR: SYSTEM_START_TIME is not set or is empty.", file=sys.stderr)
               sys.exit(1)
-
+              
           try:
               start_date = date.fromisoformat(start_time_str)
           except ValueError:
               print(f"ERROR: SYSTEM_START_TIME secret '{start_time_str}' is not a valid YYYY-MM-DD date.", file=sys.stderr)
               sys.exit(1)
-
+              
           current_date = date.today()
           delta = relativedelta(current_date, start_date)
-
           years = max(0, delta.years)
           months = max(0, delta.months)
           days = max(0, delta.days)
-
+          
           uptime_parts = []
           if years:
-              uptime_parts.append(f"{years} year{'s' if years != 1 else ''}")
+              uptime_parts.append(f"{years} {'years' if years != 1 else 'year'}")
           if months:
-              uptime_parts.append(f"{months} month{'s' if months != 1 else ''}")
+              uptime_parts.append(f"{months} {'months' if months != 1 else 'month'}")
           if days or not uptime_parts:
-              uptime_parts.append(f"{days} day{'s' if days != 1 else ''}")
-
-          print(" ".join(uptime_parts))
+              uptime_parts.append(f"{days} {'days' if days != 1 else 'day'}")
+              
+          uptime_string = " ".join(uptime_parts)
+          print(f"Calculated Uptime: {uptime_string}")
+          try:
+              api_url = f"https://api.github.com/users/{username}/repos?per_page=100"
+              response = requests.get(api_url, headers=headers)
+              response.raise_for_status()
+              
+              repos = response.json()
+              
+              personal_repos = sum(1 for repo in repos if not repo.get('fork', False))
+              contributions = sum(1 for repo in repos if repo.get('fork', False))
+              
+              print(f"Repositories: {personal_repos} (personal), {contributions} (contributions)")
+              
+              with open('README.md', 'r') as file:
+                  readme_content = file.read()
+              
+              readme_content = re.sub(
+                  r'(- \*\*⏳ Uptime:\*\*\s*).*?(<br>|$)',
+                  f'\\1{uptime_string}\\2',
+                  readme_content
+              )
+              
+              readme_content = re.sub(
+                  r'(- \*\*📂 Repositories:\*\*\s*).*?(<br>|$)',
+                  f'\\1{personal_repos} (personal), {contributions} (contributions)\\2',
+                  readme_content
+              )
+              
+              with open('README.md', 'w') as file:
+                  file.write(readme_content)
+                  
+              print("README.md updated successfully.")
+              
+          except Exception as e:
+              print(f"Error updating repository stats: {e}", file=sys.stderr)
+              sys.exit(1)
           EOF
-          )
-
-          PYTHON_EXIT_CODE=$?
-          if [ $PYTHON_EXIT_CODE -ne 0 ]; then
-            echo "Python script failed with exit code $PYTHON_EXIT_CODE."
-            exit $PYTHON_EXIT_CODE
-          fi
-
-          if [[ -z "$UPTIME_STRING" ]]; then
-            echo "ERROR: Calculated uptime string is empty."
-            exit 1
-          fi
-
-          echo "Calculated Uptime: $UPTIME_STRING"
-
-          sed -i "s#^\(- \*\*⏳ Uptime:\*\*\s*\).*#\1$UPTIME_STRING<br>#" README.md
-          SED_EXIT_CODE=$?
-          if [ $SED_EXIT_CODE -ne 0 ]; then
-            echo "sed command failed with exit code $SED_EXIT_CODE."
-            exit $SED_EXIT_CODE
-          fi
-
-          echo "README.md updated successfully."
-
+          
       - name: Commit and Push Changes
         run: |
           git add README.md
           git config --local user.email "github-actions-bot@b1gbyt3.github.io"
           git config --local user.name "b1gbyt3/GitHub-Actions-Bot"
-
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "[update] uptime"
+            git commit -m "[update] profile stats"
             git push
             echo "Changes committed and pushed successfully."
           fi
