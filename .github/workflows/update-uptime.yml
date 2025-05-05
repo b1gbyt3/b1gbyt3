@@ -40,7 +40,7 @@ jobs:
           calculated_uptime=$(ddiff -f '%Y years %m months %d days' "$start_time" now)
           echo "Calculated Uptime: $calculated_uptime"
 
-          sed -i "s/^\(Uptime:\s*\).*/\1$calculated_uptime/" README.md
+          sed -i "s#^\(\*\*Uptime:\*\*\s*\).*#\1$calculated_uptime <br>#" README.md
           echo "README.md updated."
 
       - name: Commit and Push Changes
