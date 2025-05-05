@@ -1,0 +1,53 @@
+name: Update Uptime in README
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  update_readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dateutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dateutils
+
+      - name: Calculate Uptime and Update README
+        env:
+          START_TIME_SECRET: ${{ secrets.SYSTEM_START_TIME }}
+        run: |
+          if ! command -v ddiff >/dev/null 2>&1; then
+            echo "ERROR:ddiff command not found."
+            exit 1
+          fi
+
+          start_time="$START_TIME_SECRET"
+
+          if [[ -z "$start_time" ]]; then
+            echo "ERROR: SYSTEM_START_TIME is not set or is empty."
+            exit 1
+          fi
+          if ! date -d "$start_time" "+%Y-%m-%d" > /dev/null 2>&1; then
+             echo "ERROR: SYSTEM_START_TIME is not in valid date format (YYYY-MM-DD)."
+             exit 1
+          fi
+
+          calculated_uptime=$(ddiff -f '%Y years %m months %d days' "$start_time" now)
+          echo "Calculated Uptime: $calculated_uptime"
+
+          sed -i "s/^\(Uptime:\s*\).*/\1$calculated_uptime/" README.md
+          echo "README.md updated."
+
+      - name: Commit and Push Changes
+        run: |
+          git add .
+          git config --global user.email "github-actions-bot@b1gbyt3.github.io"
+          git config --global user.name "b1gbyt3/GitHub-Actions-Bot"
+          git commit -m "Updated README" -a || echo "No changes to commit"
+          git push
+          echo "Commit and push step completed."
