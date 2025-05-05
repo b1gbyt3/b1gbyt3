@@ -73,6 +73,7 @@ jobs:
 
           def run_graphql_query(query, variables):
               headers = {'Authorization': f'Bearer {github_token}'}
+              response = None
               try:
                   response = requests.post(graphql_url, json={'query': query, 'variables': variables}, headers=headers)
                   response.raise_for_status()
@@ -99,7 +100,7 @@ jobs:
           repo_query = """
           query GetUserRepos($login: String!, $cursor: String) {
             user(login: $login) {
-              repositories(first: 100, after: $cursor, ownerAffiliations: [OWNER], isFork: null) {
+              repositories(first: 100, after: $cursor, ownerAffiliations: [OWNER]) {
                 nodes {
                   name
                   isFork
@@ -113,7 +114,7 @@ jobs:
           }
           """
 
-          print("Fetching repository stats...")
+          print("Fetching repository stats using GraphQL...")
           while has_next_page:
               variables = {'login': username, 'cursor': cursor}
               result = run_graphql_query(repo_query, variables)
@@ -125,18 +126,37 @@ jobs:
                   has_next_page = False
                   break
 
-              repositories = result.get('data', {}).get('user', {}).get('repositories', {})
+              data = result.get('data')
+              if data is None:
+                  print(f"ERROR: 'data' key not found in GraphQL response. Result: {result}", file=sys.stderr)
+                  personal_repos = 0
+                  contributions = 0
+                  has_next_page = False
+                  break
+
+              user_data = data.get('user')
+              if user_data is None:
+                   print(f"ERROR: 'user' key not found in GraphQL data. Result: {result}", file=sys.stderr)
+                   personal_repos = 0
+                   contributions = 0
+                   has_next_page = False
+                   break
+
+              repositories = user_data.get('repositories', {})
               nodes = repositories.get('nodes', [])
               page_info = repositories.get('pageInfo', {})
 
               if nodes is not None:
                   all_repo_nodes.extend(nodes)
+              else:
+                  print("Warning: 'nodes' key returned None or was missing.", file=sys.stderr)
 
               cursor = page_info.get('endCursor')
               has_next_page = page_info.get('hasNextPage', False)
 
-              if cursor is None:
-                has_next_page = False
+              if has_next_page and cursor is None:
+                  print("ERROR: hasNextPage is true but endCursor is null. Stopping pagination.", file=sys.stderr)
+                  has_next_page = False
 
           if all_repo_nodes:
               for repo in all_repo_nodes:
@@ -145,6 +165,8 @@ jobs:
                           contributions += 1
                       else:
                           personal_repos += 1
+                  elif repo is not None:
+                      print(f"Warning: Encountered non-dictionary item in repository nodes: {repo}", file=sys.stderr)
 
           print(f"Fetched Repositories: {personal_repos} (personal), {contributions} (contributions)")
 
@@ -188,6 +210,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "[update] profile stats"
+            git commit -m "chore: update profile stats via graphql"
             git push
             echo "Changes committed and pushed successfully."
+          fi
