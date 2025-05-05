@@ -76,7 +76,7 @@ jobs:
 
           echo "Calculated Uptime: $UPTIME_STRING"
 
-          sed -i "s#^\(\*\*Uptime:\*\*\s*\).*#\1$UPTIME_STRING <br>#" README.md
+          sed -i "s#^\(- \*\*⏳ Uptime:\*\*\s*\).*#\1$UPTIME_STRING#" README.md
           SED_EXIT_CODE=$?
           if [ $SED_EXIT_CODE -ne 0 ]; then
             echo "sed command failed with exit code $SED_EXIT_CODE."
