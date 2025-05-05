@@ -1,4 +1,4 @@
-**[babenko.elias@gmail.com](mailto:babenko.elias@gmail.com)**<br>
+**elias@babenko**<br>
 **------------------------------------------------------------------**<br>
 **OS:**                 CS Student<br>
 **Kernel:**             ENTP<br>
