@@ -2,9 +2,9 @@
 **------------------------------------------------------------**<br>
 - **👨‍🎓 OS:**            CS Student<br>
 - **🧠 Kernel:**        ENTP<br>
-24 years 11 months 20 days
+- **⏳ Uptime:**        24 years 11 months 20 days<br>
 - **🌎 Locale:**        ru_RU, en_US<br>
 - **💻 Languages:**     Python, Bash, JavaScript, C++<br>
-37 (personal), 4 (contributions)
+- **📂 Repositories:**  37 (personal), 4 (contributions)<br>
 
 **------------------------------------------------------------**
