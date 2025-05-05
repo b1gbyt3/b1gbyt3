@@ -1,4 +1,5 @@
 name: Update Profile Stats in README
+
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -10,17 +11,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-          
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests python-dateutil
-          
+
       - name: Update Profile Stats
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -31,31 +32,34 @@ jobs:
           import os
           import sys
           import re
-          from datetime import date
+          import json
+          from datetime import date, datetime
           from dateutil.relativedelta import relativedelta
           import requests
-          
+
           github_token = os.environ.get('GITHUB_TOKEN')
           start_time_str = os.environ.get('SYSTEM_START_TIME')
           username = os.environ.get('GITHUB_USERNAME')
-          headers = {'Authorization': f'token {github_token}'} if github_token else {}
-          
+          readme_path = 'README.md'
+          graphql_url = 'https://api.github.com/graphql'
+
           if not start_time_str:
               print("ERROR: SYSTEM_START_TIME is not set or is empty.", file=sys.stderr)
               sys.exit(1)
-              
+
           try:
               start_date = date.fromisoformat(start_time_str)
           except ValueError:
-              print(f"ERROR: SYSTEM_START_TIME secret '{start_time_str}' is not a valid YYYY-MM-DD date.", file=sys.stderr)
+              print(f"ERROR: SYSTEM_START_TIME '{start_time_str}' is not a valid YYYY-MM-DD date.", file=sys.stderr)
               sys.exit(1)
-              
+
           current_date = date.today()
           delta = relativedelta(current_date, start_date)
+
           years = max(0, delta.years)
           months = max(0, delta.months)
           days = max(0, delta.days)
-          
+
           uptime_parts = []
           if years:
               uptime_parts.append(f"{years} {'years' if years != 1 else 'year'}")
@@ -63,55 +67,127 @@ jobs:
               uptime_parts.append(f"{months} {'months' if months != 1 else 'month'}")
           if days or not uptime_parts:
               uptime_parts.append(f"{days} {'days' if days != 1 else 'day'}")
-              
+
           uptime_string = " ".join(uptime_parts)
           print(f"Calculated Uptime: {uptime_string}")
+
+          def run_graphql_query(query, variables):
+              headers = {'Authorization': f'Bearer {github_token}'}
+              try:
+                  response = requests.post(graphql_url, json={'query': query, 'variables': variables}, headers=headers)
+                  response.raise_for_status()
+                  return response.json()
+              except requests.exceptions.RequestException as e:
+                  print(f"ERROR during GraphQL request: {e}", file=sys.stderr)
+                  if response is not None:
+                      print(f"Response status: {response.status_code}", file=sys.stderr)
+                      try:
+                          print(f"Response body: {response.json()}", file=sys.stderr)
+                      except json.JSONDecodeError:
+                          print(f"Response body: {response.text}", file=sys.stderr)
+                  return None
+              except Exception as e:
+                   print(f"ERROR processing GraphQL request: {e}", file=sys.stderr)
+                   return None
+
+          personal_repos = 0
+          contributions = 0
+          all_repo_nodes = []
+          has_next_page = True
+          cursor = None
+
+          repo_query = """
+          query GetUserRepos($login: String!, $cursor: String) {
+            user(login: $login) {
+              repositories(first: 100, after: $cursor, ownerAffiliations: [OWNER], isFork: null) {
+                nodes {
+                  name
+                  isFork
+                }
+                pageInfo {
+                  endCursor
+                  hasNextPage
+                }
+              }
+            }
+          }
+          """
+
+          print("Fetching repository stats...")
+          while has_next_page:
+              variables = {'login': username, 'cursor': cursor}
+              result = run_graphql_query(repo_query, variables)
+
+              if result is None or 'errors' in result:
+                  print(f"ERROR: GraphQL query failed. Result: {result}", file=sys.stderr)
+                  personal_repos = 0
+                  contributions = 0
+                  has_next_page = False
+                  break
+
+              repositories = result.get('data', {}).get('user', {}).get('repositories', {})
+              nodes = repositories.get('nodes', [])
+              page_info = repositories.get('pageInfo', {})
+
+              if nodes is not None:
+                  all_repo_nodes.extend(nodes)
+
+              cursor = page_info.get('endCursor')
+              has_next_page = page_info.get('hasNextPage', False)
+
+              if cursor is None:
+                has_next_page = False
+
+          if all_repo_nodes:
+              for repo in all_repo_nodes:
+                  if repo and isinstance(repo, dict):
+                      if repo.get('isFork', False):
+                          contributions += 1
+                      else:
+                          personal_repos += 1
+
+          print(f"Fetched Repositories: {personal_repos} (personal), {contributions} (contributions)")
+
           try:
-              api_url = f"https://api.github.com/users/{username}/repos?per_page=100"
-              response = requests.get(api_url, headers=headers)
-              response.raise_for_status()
-              
-              repos = response.json()
-              
-              personal_repos = sum(1 for repo in repos if not repo.get('fork', False))
-              contributions = sum(1 for repo in repos if repo.get('fork', False))
-              
-              print(f"Repositories: {personal_repos} (personal), {contributions} (contributions)")
-              
-              with open('README.md', 'r') as file:
+              with open(readme_path, 'r', encoding='utf-8') as file:
                   readme_content = file.read()
-              
+
               readme_content = re.sub(
-                  r'(- \*\*⏳ Uptime:\*\*\s*).*?(<br>|$)',
-                  f'\\1{uptime_string}\\2',
-                  readme_content
+                  r'(- \*\*⏳ Uptime:\*\*\s*).*?(?=<br>|$)',
+                  f'\\1{uptime_string}<br>',
+                  readme_content,
+                  flags=re.IGNORECASE
               )
-              
+
+              repo_string = f"{personal_repos} (personal), {contributions} (contributions)"
               readme_content = re.sub(
-                  r'(- \*\*📂 Repositories:\*\*\s*).*?(<br>|$)',
-                  f'\\1{personal_repos} (personal), {contributions} (contributions)\\2',
-                  readme_content
+                  r'(- \*\*📂 Repositories:\*\*\s*).*?(?=<br>|$)',
+                  f'\\1{repo_string}<br>',
+                  readme_content,
+                  flags=re.IGNORECASE
               )
-              
-              with open('README.md', 'w') as file:
+
+              with open(readme_path, 'w', encoding='utf-8') as file:
                   file.write(readme_content)
-                  
-              print("README.md updated successfully.")
-              
+
+              print(f"{readme_path} updated successfully.")
+
+          except FileNotFoundError:
+              print(f"ERROR: {readme_path} not found.", file=sys.stderr)
+              sys.exit(1)
           except Exception as e:
-              print(f"Error updating repository stats: {e}", file=sys.stderr)
+              print(f"Error updating {readme_path}: {e}", file=sys.stderr)
               sys.exit(1)
           EOF
-          
+
       - name: Commit and Push Changes
         run: |
-          git add README.md
           git config --local user.email "github-actions-bot@b1gbyt3.github.io"
           git config --local user.name "b1gbyt3/GitHub-Actions-Bot"
+          git add README.md
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
             git commit -m "[update] profile stats"
             git push
             echo "Changes committed and pushed successfully."
-          fi
