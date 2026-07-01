@@ -2,7 +2,7 @@
 **-------------------------------------------------**<br>
 - **👨‍🎓 OS:**            CS Student<br>
 - **🧠 Kernel:**        ENTP<br>
-- **⏳ Uptime:**        26 years 1 month 15 days<br>
+- **⏳ Uptime:**        26 years 1 month 16 days<br>
 - **🌎 Locale:**        ru_RU, en_US<br>
 - **💻 Languages:**     Python, Bash, JavaScript, C++<br>
 - **🎯 Focus:**         Web Scraping, Automation<br>
